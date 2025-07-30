@@ -1,0 +1,20 @@
+{
+  "name": "wpnode",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "axios": "^1.11.0",
+    "express": "^5.1.0",
+    "mongoose": "^8.17.0",
+    "multer": "^2.0.2",
+    "qrcode": "^1.5.4"
+  }
+}
