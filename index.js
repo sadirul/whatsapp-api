@@ -7,11 +7,16 @@ const Session = require('./models/Session')
 require('./db')
 const axios = require('axios')
 const multer = require('multer')
-const upload = multer({ dest: 'uploads/' })
 const mime = require('mime-types')
 
 const app = express()
 app.use(express.json())
+
+// Multer storage
+const upload = multer({
+    dest: 'uploads/',
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
+})
 
 const sessions = {}
 
@@ -38,7 +43,6 @@ async function initWhatsApp(instanceKey) {
 
         if (qr) {
             const qrImage = await qrcode.toDataURL(qr)
-
             await Session.findOneAndUpdate(
                 { instanceKey },
                 { qr: qrImage, qrGeneratedAt: new Date(), connected: false },
@@ -59,6 +63,7 @@ async function initWhatsApp(instanceKey) {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
             console.log(`❌ Disconnected: ${instanceKey}, reconnect: ${shouldReconnect}`)
             await Session.findOneAndUpdate({ instanceKey }, { connected: false })
+
             if (shouldReconnect) {
                 setTimeout(() => initWhatsApp(instanceKey), 3000)
             }
@@ -68,44 +73,41 @@ async function initWhatsApp(instanceKey) {
 
 async function logoutInstance(instanceKey) {
     try {
-        // Remove from in-memory session map
         const sock = sessions[instanceKey]
         if (sock) {
-            await sock.logout() // Properly log out from WhatsApp
+            await sock.logout()
             delete sessions[instanceKey]
         }
 
-        // Remove session files
         const sessionPath = path.join(__dirname, 'sessions', instanceKey)
         if (fs.existsSync(sessionPath)) {
             fs.rmSync(sessionPath, { recursive: true, force: true })
         }
 
-        // Remove from MongoDB
         await Session.findOneAndDelete({ instanceKey })
 
         return {
             status: 'success',
-            message: `Instance ${instanceKey} logged out and session removed.`
+            message: `Instance ${instanceKey} logged out and session removed.`,
         }
     } catch (error) {
         console.error(`❌ Logout failed for ${instanceKey}:`, error)
         return {
             status: 'error',
             message: 'Logout failed',
-            error: error.message
+            error: error.message,
         }
     }
 }
+
+// ---------- ROUTES ----------
 
 app.get('/start-session', async (req, res) => {
     const { instanceKey } = req.query
     if (!instanceKey) return res.status(400).json({ success: false, message: 'instanceKey is required' })
 
     const exists = await Session.findOne({ instanceKey })
-    if (!exists) {
-        await Session.create({ instanceKey })
-    }
+    if (!exists) await Session.create({ instanceKey })
 
     await initWhatsApp(instanceKey)
 
@@ -120,39 +122,30 @@ app.get('/qr', async (req, res) => {
     if (!session) return res.status(404).json({ success: false, message: 'Instance not found' })
 
     if (session.connected) {
-        return res.json({
-            success: true,
-            message: 'Already connected to WhatsApp',
-            connected: true
-        })
+        return res.json({ success: true, message: 'Already connected to WhatsApp', connected: true })
     }
 
     const now = new Date()
     const qrAge = session.qrGeneratedAt ? (now - session.qrGeneratedAt) / 1000 : Infinity
 
     if (!session.qr || qrAge > 30) {
-        return res.json({
-            success: false,
-            message: 'QR expired or not available. Please restart session.',
-            connected: false
-        })
+        return res.json({ success: false, message: 'QR expired or not available. Please restart session.', connected: false })
     }
 
     return res.json({
         success: true,
         qr: session.qr,
         expiresIn: 30 - Math.floor(qrAge),
-        connected: false
+        connected: false,
     })
 })
-
 
 app.post('/send-message', async (req, res) => {
     const { instanceKey } = req.query
     const { number, message } = req.body
 
     if (!instanceKey || !number || !message) {
-        return res.status(400).json({ success: false, message: 'instanceKey (query), number, and message required' })
+        return res.status(400).json({ success: false, message: 'instanceKey, number, and message required' })
     }
 
     const sock = sessions[instanceKey]
@@ -167,7 +160,6 @@ app.post('/send-message', async (req, res) => {
         res.status(500).json({ success: false, error: err.toString() })
     }
 })
-
 
 app.post('/send-file-url', async (req, res) => {
     const { instanceKey } = req.query
@@ -184,9 +176,8 @@ app.post('/send-file-url', async (req, res) => {
         const response = await axios.get(fileUrl, { responseType: 'arraybuffer' })
         const buffer = Buffer.from(response.data, 'binary')
         const mimeType = response.headers['content-type']
-        const fileExt = mime.extension(mimeType)
+        const fileExt = mime.extension(mimeType) || 'pdf'
         const fileName = `file.${fileExt}`
-
         const jid = number.includes('@s.whatsapp.net') ? number : `${number}@s.whatsapp.net`
 
         await sock.sendMessage(jid, {
@@ -203,9 +194,9 @@ app.post('/send-file-url', async (req, res) => {
     }
 })
 
-
 app.post('/send-file', upload.single('file'), async (req, res) => {
-    const { instanceKey, number, caption } = req.body
+    const { instanceKey } = req.query
+    const { number, caption } = req.body
     const file = req.file
 
     if (!instanceKey || !number || !file) {
@@ -219,7 +210,6 @@ app.post('/send-file', upload.single('file'), async (req, res) => {
         const buffer = fs.readFileSync(file.path)
         const mimeType = file.mimetype
         const fileName = file.originalname
-
         const jid = number.includes('@s.whatsapp.net') ? number : `${number}@s.whatsapp.net`
 
         await sock.sendMessage(jid, {
@@ -229,7 +219,7 @@ app.post('/send-file', upload.single('file'), async (req, res) => {
             caption: caption || ''
         })
 
-        fs.unlinkSync(file.path) // clean up temp file
+        fs.unlinkSync(file.path)
         res.json({ success: true, message: 'File sent from upload' })
     } catch (err) {
         console.error(err)
@@ -239,7 +229,6 @@ app.post('/send-file', upload.single('file'), async (req, res) => {
 
 app.get('/logout', async (req, res) => {
     const instanceKey = req.query.instanceKey
-
     if (!instanceKey) {
         return res.status(400).json({ status: 'error', message: 'Missing instanceKey in query.' })
     }
@@ -248,7 +237,7 @@ app.get('/logout', async (req, res) => {
     res.json(result)
 })
 
-
+// ---------- START SERVER ----------
 
 const PORT = 3000
 app.listen(PORT, async () => {
