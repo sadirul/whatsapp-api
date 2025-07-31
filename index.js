@@ -5,12 +5,15 @@ const qrcode = require('qrcode')
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
 const Session = require('./models/Session')
 require('./db')
+require('dotenv').config()
 const axios = require('axios')
 const multer = require('multer')
 const mime = require('mime-types')
 
 const app = express()
 app.use(express.json())
+
+const basicAuth = require('./middleware/basicAuth')
 
 // Multer storage
 const upload = multer({
@@ -26,6 +29,7 @@ async function loadSessions() {
         await initWhatsApp(s.instanceKey)
     }
 }
+
 
 async function initWhatsApp(instanceKey) {
     const folder = path.join(__dirname, 'sessions', instanceKey)
@@ -100,8 +104,10 @@ async function logoutInstance(instanceKey) {
     }
 }
 
-// ---------- ROUTES ----------
+// MIDDLEWARE
+app.use(basicAuth)
 
+// ---------- ROUTES ----------
 app.get('/start-session', async (req, res) => {
     const { instanceKey } = req.query
     if (!instanceKey) return res.status(400).json({ success: false, message: 'instanceKey is required' })
