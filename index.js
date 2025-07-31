@@ -169,7 +169,7 @@ app.post('/send-message', async (req, res) => {
 
 app.post('/send-file-url', async (req, res) => {
     const { instanceKey } = req.query
-    const { number, fileUrl, caption } = req.body
+    const { number, fileUrl, caption, fileName: customFileName } = req.body
 
     if (!instanceKey || !number || !fileUrl) {
         return res.status(400).json({ success: false, message: 'instanceKey, number, and fileUrl are required' })
@@ -183,7 +183,8 @@ app.post('/send-file-url', async (req, res) => {
         const buffer = Buffer.from(response.data, 'binary')
         const mimeType = response.headers['content-type']
         const fileExt = mime.extension(mimeType) || 'pdf'
-        const fileName = `file.${fileExt}`
+        const fileName = customFileName || `file.${fileExt}`
+
         const jid = number.includes('@s.whatsapp.net') ? number : `${number}@s.whatsapp.net`
 
         await sock.sendMessage(jid, {
@@ -199,6 +200,7 @@ app.post('/send-file-url', async (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to send file', error: err.toString() })
     }
 })
+
 
 app.post('/send-file', upload.single('file'), async (req, res) => {
     const { instanceKey } = req.query
