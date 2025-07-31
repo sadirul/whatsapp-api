@@ -9,8 +9,15 @@ require('dotenv').config()
 const axios = require('axios')
 const multer = require('multer')
 const mime = require('mime-types')
+const cors = require('cors') // ✅ Added
 
 const app = express()
+
+// ✅ Enable CORS for all origins (for production use specific origin)
+app.use(cors())
+// To restrict only to one origin, use:
+// app.use(cors({ origin: 'https://whatsapp.mytelecom.online' }))
+
 app.use(express.json())
 
 const basicAuth = require('./middleware/basicAuth')
@@ -29,7 +36,6 @@ async function loadSessions() {
         await initWhatsApp(s.instanceKey)
     }
 }
-
 
 async function initWhatsApp(instanceKey) {
     const folder = path.join(__dirname, 'sessions', instanceKey)
@@ -201,7 +207,6 @@ app.post('/send-file-url', async (req, res) => {
     }
 })
 
-
 app.post('/send-file', upload.single('file'), async (req, res) => {
     const { instanceKey } = req.query
     const { number, caption } = req.body
@@ -246,7 +251,6 @@ app.get('/logout', async (req, res) => {
 })
 
 // ---------- START SERVER ----------
-
 const PORT = 3000
 app.listen(PORT, async () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`)
