@@ -339,6 +339,121 @@ app.post('/send-message', async (req, res) => {
         })
     }
 })
+app.post('/send-file-url', async (req, res) => {
+    try {
+        const { instanceKey } = req.query
+        const { number, fileUrl, caption, fileName: customFileName } = req.body
+
+        if (!instanceKey || !number || !fileUrl) {
+            return res.status(400).json({
+                success: false,
+                message: 'instanceKey, number, and fileUrl are required'
+            })
+        }
+
+        const sock = sessions[instanceKey]
+        if (!sock) {
+            return res.status(400).json({
+                success: false,
+                message: 'Session not connected. Please scan QR code first.'
+            })
+        }
+
+        const response = await axios.get(fileUrl, {
+            responseType: 'arraybuffer',
+            timeout: 30000 // 30 second timeout
+        })
+
+        const buffer = Buffer.from(response.data, 'binary')
+        const mimeType = response.headers['content-type'] || 'application/octet-stream'
+        const fileExt = mime.extension(mimeType) || 'pdf'
+        const fileName = customFileName || `file.${fileExt}`
+
+        const jid = number.includes('@s.whatsapp.net') ? number : `${number}@s.whatsapp.net`
+
+        await sock.sendMessage(jid, {
+            document: buffer,
+            mimetype: mimeType,
+            fileName,
+            caption: caption || ''
+        })
+
+        res.json({
+            success: true,
+            message: 'File sent successfully from URL'
+        })
+
+    } catch (error) {
+        console.error('❌ Send file URL error:', error)
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send file from URL',
+            error: error.message
+        })
+    }
+})
+
+app.post('/send-file', upload.single('file'), async (req, res) => {
+    try {
+        const { instanceKey } = req.query
+        const { number, caption } = req.body
+        const file = req.file
+
+        if (!instanceKey || !number || !file) {
+            return res.status(400).json({
+                success: false,
+                message: 'instanceKey, number, and file are required'
+            })
+        }
+
+        const sock = sessions[instanceKey]
+        if (!sock) {
+            // Clean up uploaded file
+            if (fs.existsSync(file.path)) {
+                fs.unlinkSync(file.path)
+            }
+            return res.status(400).json({
+                success: false,
+                message: 'Session not connected. Please scan QR code first.'
+            })
+        }
+
+        const buffer = fs.readFileSync(file.path)
+        const mimeType = file.mimetype || 'application/octet-stream'
+        const fileName = file.originalname || 'file'
+        const jid = number.includes('@s.whatsapp.net') ? number : `${number}@s.whatsapp.net`
+
+        await sock.sendMessage(jid, {
+            document: buffer,
+            mimetype: mimeType,
+            fileName,
+            caption: caption || ''
+        })
+
+        // Clean up uploaded file
+        fs.unlinkSync(file.path)
+
+        res.json({
+            success: true,
+            message: 'File sent successfully from upload'
+        })
+
+    } catch (error) {
+        console.error('❌ Send file upload error:', error)
+
+        // Clean up uploaded file in case of error
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path)
+        }
+
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send file',
+            error: error.message
+        })
+    }
+})
+
 
 app.get('/logout', async (req, res) => {
     try {
