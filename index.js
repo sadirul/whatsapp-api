@@ -215,11 +215,11 @@ app.get('/start-session', async (req, res) => {
             })
         }
 
-        await Session.findOneAndUpdate(
-            { instanceKey },
-            { instanceKey, connected: false, qr: null, qrGeneratedAt: null },
-            { upsert: true }
-        )
+        // await Session.findOneAndUpdate(
+        //     { instanceKey },
+        //     { instanceKey, connected: false, qr: null, qrGeneratedAt: null },
+        //     { upsert: true }
+        // )
 
         await initWhatsApp(instanceKey)
 
